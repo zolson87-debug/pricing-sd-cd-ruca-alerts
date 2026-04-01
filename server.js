@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -23,6 +24,7 @@ const CD_PRICING_URL =
 
 const PRICING_ALERTS_CSV_URL = process.env.PRICING_ALERTS_CSV_URL || "";
 const PRICING_REGIONS_CSV_URL = process.env.PRICING_REGIONS_CSV_URL || "";
+const DIFFICULT_LANES_CSV_URL = process.env.DIFFICULT_LANES_CSV_URL || "";
 
 const APP_USERNAME = process.env.APP_USERNAME;
 const APP_PASSWORD = process.env.APP_PASSWORD;
@@ -40,10 +42,19 @@ if (!APP_USERNAME || !APP_PASSWORD) {
   console.warn("WARNING: APP_USERNAME or APP_PASSWORD is not set.");
 }
 if (!PRICING_ALERTS_CSV_URL) {
-  console.warn("WARNING: PRICING_ALERTS_CSV_URL is not set. Pricing alerts will be unavailable.");
+  console.warn(
+    "WARNING: PRICING_ALERTS_CSV_URL is not set. Pricing alerts will be unavailable."
+  );
 }
 if (!PRICING_REGIONS_CSV_URL) {
-  console.warn("WARNING: PRICING_REGIONS_CSV_URL is not set. Region-based pricing alerts may be unavailable.");
+  console.warn(
+    "WARNING: PRICING_REGIONS_CSV_URL is not set. Region-based pricing alerts will be unavailable."
+  );
+}
+if (!DIFFICULT_LANES_CSV_URL) {
+  console.warn(
+    "WARNING: DIFFICULT_LANES_CSV_URL is not set. Difficult lane matching will be unavailable."
+  );
 }
 
 let rucaData = {};
@@ -55,9 +66,11 @@ let cdTokenCache = {
 let pricingAlertsCache = {
   alerts: [],
   regions: {},
+  difficultLanes: [],
   fetchedAt: 0
 };
 
+const zipGeoCache = {};
 const PRICING_ALERTS_CACHE_MS = 5 * 60 * 1000;
 
 try {
@@ -138,13 +151,13 @@ function requireAuth(req, res, next) {
   const session = verifySession(cookies.auth_session);
 
   if (!session) {
-    const wantsJson =
+    const expectsJson =
       req.path === "/quote" ||
       req.path === "/session" ||
-      (req.headers.accept && req.headers.accept.includes("application/json")) ||
-      (req.headers["content-type"] && req.headers["content-type"].includes("application/json"));
+      req.headers["content-type"] === "application/json" ||
+      (req.headers.accept && req.headers.accept.includes("application/json"));
 
-    if (wantsJson) {
+    if (expectsJson) {
       return res.status(401).json({
         error: "Unauthorized. Please log in again."
       });
@@ -320,12 +333,10 @@ function summarizeCentralDispatchResponse(cdJson) {
 
   const first = items[0];
 
-  const rawLow =
-    typeof first.lowPrice === "number" ? first.lowPrice : null;
+  const rawLow = typeof first.lowPrice === "number" ? first.lowPrice : null;
   const rawPredicted =
     typeof first.meanPredictedPrice === "number" ? first.meanPredictedPrice : null;
-  const rawHigh =
-    typeof first.highPrice === "number" ? first.highPrice : null;
+  const rawHigh = typeof first.highPrice === "number" ? first.highPrice : null;
 
   const low = rawLow !== null ? Math.round(rawLow) : null;
   const predicted = rawPredicted !== null ? Math.round(rawPredicted) : null;
@@ -430,9 +441,10 @@ async function loadPricingRulesAndRegions() {
     return pricingAlertsCache;
   }
 
-  const [alertRows, regionRows] = await Promise.all([
+  const [alertRows, regionRows, difficultLaneRows] = await Promise.all([
     loadSheetRows(PRICING_ALERTS_CSV_URL),
-    loadSheetRows(PRICING_REGIONS_CSV_URL)
+    loadSheetRows(PRICING_REGIONS_CSV_URL),
+    loadSheetRows(DIFFICULT_LANES_CSV_URL)
   ]);
 
   const regions = {};
@@ -451,6 +463,7 @@ async function loadPricingRulesAndRegions() {
   pricingAlertsCache = {
     alerts: alertRows,
     regions,
+    difficultLanes: difficultLaneRows,
     fetchedAt: now
   };
 
@@ -524,6 +537,140 @@ function findMatchingPricingAlerts({ alerts, regions, pickup, delivery, vehicles
       alert_message: row.alert_message || "",
       pricing_guidance: row.pricing_guidance || ""
     }));
+}
+
+function isActiveDifficultLaneRow(row) {
+  return ["yes", "true", "1", "active"].includes(
+    String(row.active || "").trim().toLowerCase()
+  );
+}
+
+function toRadians(deg) {
+  return (Number(deg) * Math.PI) / 180;
+}
+
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const R = 3958.8;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+async function lookupZipLatLng(zip) {
+  const cleanZip = String(zip || "").trim();
+
+  if (!/^\d{5}$/.test(cleanZip)) {
+    return null;
+  }
+
+  if (zipGeoCache[cleanZip]) {
+    return zipGeoCache[cleanZip];
+  }
+
+  try {
+    const response = await fetch(`https://api.zippopotam.us/us/${cleanZip}`);
+    if (!response.ok) {
+      zipGeoCache[cleanZip] = null;
+      return null;
+    }
+
+    const data = await response.json();
+    const place = data?.places?.[0];
+    if (!place) {
+      zipGeoCache[cleanZip] = null;
+      return null;
+    }
+
+    const lat = Number(place.latitude);
+    const lng = Number(place.longitude);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      zipGeoCache[cleanZip] = null;
+      return null;
+    }
+
+    const result = { zip: cleanZip, lat, lng };
+    zipGeoCache[cleanZip] = result;
+    return result;
+  } catch {
+    zipGeoCache[cleanZip] = null;
+    return null;
+  }
+}
+
+async function findMatchingDifficultLane(difficultLanes, pickupZip, deliveryZip) {
+  if (!Array.isArray(difficultLanes) || difficultLanes.length === 0) {
+    return null;
+  }
+
+  const pickupPoint = await lookupZipLatLng(pickupZip);
+  const deliveryPoint = await lookupZipLatLng(deliveryZip);
+
+  if (!pickupPoint || !deliveryPoint) {
+    return null;
+  }
+
+  const activeRows = difficultLanes.filter((row) => isActiveDifficultLaneRow(row));
+
+  for (const row of activeRows) {
+    const originZip = String(row.origin_zip || "").trim();
+    const destinationZip = String(row.destination_zip || "").trim();
+
+    if (!/^\d{5}$/.test(originZip) || !/^\d{5}$/.test(destinationZip)) {
+      continue;
+    }
+
+    const originPoint = await lookupZipLatLng(originZip);
+    const destinationPoint = await lookupZipLatLng(destinationZip);
+
+    if (!originPoint || !destinationPoint) {
+      continue;
+    }
+
+    const originMiles = haversineMiles(
+      pickupPoint.lat,
+      pickupPoint.lng,
+      originPoint.lat,
+      originPoint.lng
+    );
+
+    const destinationMiles = haversineMiles(
+      deliveryPoint.lat,
+      deliveryPoint.lng,
+      destinationPoint.lat,
+      destinationPoint.lng
+    );
+
+    if (originMiles <= 25 && destinationMiles <= 25) {
+      return {
+        matched: true,
+        rule_name: row.rule_name || "Known Difficult Lane",
+        alert_message:
+          row.alert_message ||
+          "This quote matches a known difficult lane within 25 miles on both ends.",
+        pricing_guidance:
+          row.pricing_guidance ||
+          "Review pricing carefully and consider adding margin.",
+        origin_zip: originZip,
+        destination_zip: destinationZip,
+        origin_miles: Number(originMiles.toFixed(1)),
+        destination_miles: Number(destinationMiles.toFixed(1))
+      };
+    }
+  }
+
+  return {
+    matched: false
+  };
 }
 
 app.get("/login", (req, res) => {
@@ -618,8 +765,11 @@ app.post("/quote", requireAuth, async (req, res) => {
     const dropRuca = rucaData[dropZip];
 
     let pricingAlerts = [];
+    let difficultLaneMatch = { matched: false };
+
     try {
       const ruleData = await loadPricingRulesAndRegions();
+
       pricingAlerts = findMatchingPricingAlerts({
         alerts: ruleData.alerts,
         regions: ruleData.regions,
@@ -628,8 +778,23 @@ app.post("/quote", requireAuth, async (req, res) => {
         vehicles,
         trailer_type
       });
+
+      difficultLaneMatch = await findMatchingDifficultLane(
+        ruleData.difficultLanes,
+        pickupZip,
+        dropZip
+      );
+
+      if (difficultLaneMatch?.matched) {
+        pricingAlerts.push({
+          rule_name: difficultLaneMatch.rule_name,
+          severity: "high",
+          alert_message: difficultLaneMatch.alert_message,
+          pricing_guidance: `${difficultLaneMatch.pricing_guidance} Matched base lane ${difficultLaneMatch.origin_zip} → ${difficultLaneMatch.destination_zip}. Origin within ${difficultLaneMatch.origin_miles} miles and destination within ${difficultLaneMatch.destination_miles} miles.`
+        });
+      }
     } catch (err) {
-      console.error("Failed to load pricing alerts:", err.message);
+      console.error("Failed to load pricing alerts / difficult lanes:", err.message);
     }
 
     const sdPromise = fetch(SUPERDISPATCH_URL, {
@@ -737,6 +902,7 @@ app.post("/quote", requireAuth, async (req, res) => {
       superdispatch: sdJson,
       centraldispatch,
       pricing_alerts: pricingAlerts,
+      known_difficult_lane: difficultLaneMatch || { matched: false },
       pickup_access: {
         zip: pickupZip,
         ruca_code: pickupRuca ?? null,

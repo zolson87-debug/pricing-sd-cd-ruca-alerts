@@ -497,10 +497,16 @@ function matchesState(ruleValue, actualState) {
 }
 
 function matchesRegion(ruleValue, actualState, regions) {
-  const rule = String(ruleValue || "").trim();
+  const rule = String(ruleValue || "").trim().toLowerCase();
   if (!rule) return true;
 
-  const regionStates = regions[rule] || [];
+  const matchedKey = Object.keys(regions).find(
+    (key) => String(key || "").trim().toLowerCase() === rule
+  );
+
+  if (!matchedKey) return false;
+
+  const regionStates = regions[matchedKey] || [];
   return regionStates.includes(String(actualState || "").trim().toUpperCase());
 }
 
@@ -572,7 +578,7 @@ async function lookupZipLatLng(zip) {
     return null;
   }
 
-  if (zipGeoCache[cleanZip]) {
+  if (Object.prototype.hasOwnProperty.call(zipGeoCache, cleanZip)) {
     return zipGeoCache[cleanZip];
   }
 
@@ -608,17 +614,29 @@ async function lookupZipLatLng(zip) {
 }
 
 async function findMatchingDifficultLane(difficultLanes, pickupZip, deliveryZip) {
+  const emptyResult = {
+    matched: false,
+    pickup_side_match: false,
+    dropoff_side_match: false,
+    pickup_matches: [],
+    dropoff_matches: [],
+    full_lane_matches: []
+  };
+
   if (!Array.isArray(difficultLanes) || difficultLanes.length === 0) {
-    return null;
+    return emptyResult;
   }
 
   const pickupPoint = await lookupZipLatLng(pickupZip);
   const deliveryPoint = await lookupZipLatLng(deliveryZip);
 
   if (!pickupPoint || !deliveryPoint) {
-    return null;
+    return emptyResult;
   }
 
+  const pickupMatches = [];
+  const dropoffMatches = [];
+  const fullLaneMatches = [];
   const activeRows = difficultLanes.filter((row) => isActiveDifficultLaneRow(row));
 
   for (const row of activeRows) {
@@ -650,9 +668,39 @@ async function findMatchingDifficultLane(difficultLanes, pickupZip, deliveryZip)
       destinationPoint.lng
     );
 
-    if (originMiles <= 25 && destinationMiles <= 25) {
-      return {
-        matched: true,
+    const pickupSideMatch = originMiles <= 25;
+    const dropoffSideMatch = destinationMiles <= 25;
+
+    if (pickupSideMatch) {
+      pickupMatches.push({
+        rule_name: row.rule_name || "Difficult Pickup Area",
+        alert_message:
+          row.alert_message ||
+          "Pickup ZIP is within 25 miles of a known difficult-lane origin.",
+        pricing_guidance:
+          row.pricing_guidance ||
+          "Review pricing carefully and consider adding margin.",
+        matched_zip: originZip,
+        miles: Number(originMiles.toFixed(1))
+      });
+    }
+
+    if (dropoffSideMatch) {
+      dropoffMatches.push({
+        rule_name: row.rule_name || "Difficult Dropoff Area",
+        alert_message:
+          row.alert_message ||
+          "Dropoff ZIP is within 25 miles of a known difficult-lane destination.",
+        pricing_guidance:
+          row.pricing_guidance ||
+          "Review pricing carefully and consider adding margin.",
+        matched_zip: destinationZip,
+        miles: Number(destinationMiles.toFixed(1))
+      });
+    }
+
+    if (pickupSideMatch && dropoffSideMatch) {
+      fullLaneMatches.push({
         rule_name: row.rule_name || "Known Difficult Lane",
         alert_message:
           row.alert_message ||
@@ -664,13 +712,38 @@ async function findMatchingDifficultLane(difficultLanes, pickupZip, deliveryZip)
         destination_zip: destinationZip,
         origin_miles: Number(originMiles.toFixed(1)),
         destination_miles: Number(destinationMiles.toFixed(1))
-      };
+      });
     }
   }
 
   return {
-    matched: false
+    matched: fullLaneMatches.length > 0,
+    pickup_side_match: pickupMatches.length > 0,
+    dropoff_side_match: dropoffMatches.length > 0,
+    pickup_matches: pickupMatches,
+    dropoff_matches: dropoffMatches,
+    full_lane_matches: fullLaneMatches
   };
+}
+
+function dedupeAlerts(alerts) {
+  const seen = new Set();
+
+  return alerts.filter((alert) => {
+    const key = [
+      String(alert.rule_name || "").trim(),
+      String(alert.severity || "").trim(),
+      String(alert.alert_message || "").trim(),
+      String(alert.pricing_guidance || "").trim()
+    ].join("|");
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 app.get("/login", (req, res) => {
@@ -765,7 +838,14 @@ app.post("/quote", requireAuth, async (req, res) => {
     const dropRuca = rucaData[dropZip];
 
     let pricingAlerts = [];
-    let difficultLaneMatch = { matched: false };
+    let difficultLaneMatch = {
+      matched: false,
+      pickup_side_match: false,
+      dropoff_side_match: false,
+      pickup_matches: [],
+      dropoff_matches: [],
+      full_lane_matches: []
+    };
 
     try {
       const ruleData = await loadPricingRulesAndRegions();
@@ -785,14 +865,34 @@ app.post("/quote", requireAuth, async (req, res) => {
         dropZip
       );
 
-      if (difficultLaneMatch?.matched) {
+      difficultLaneMatch.full_lane_matches.forEach((match) => {
         pricingAlerts.push({
-          rule_name: difficultLaneMatch.rule_name,
+          rule_name: match.rule_name,
           severity: "high",
-          alert_message: difficultLaneMatch.alert_message,
-          pricing_guidance: `${difficultLaneMatch.pricing_guidance} Matched base lane ${difficultLaneMatch.origin_zip} → ${difficultLaneMatch.destination_zip}. Origin within ${difficultLaneMatch.origin_miles} miles and destination within ${difficultLaneMatch.destination_miles} miles.`
+          alert_message: match.alert_message,
+          pricing_guidance: `${match.pricing_guidance} Matched base lane ${match.origin_zip} → ${match.destination_zip}. Origin within ${match.origin_miles} miles and destination within ${match.destination_miles} miles.`
         });
-      }
+      });
+
+      difficultLaneMatch.pickup_matches.forEach((match) => {
+        pricingAlerts.push({
+          rule_name: "Difficult Pickup Area",
+          severity: "medium",
+          alert_message: `Pickup ZIP is within ${match.miles} miles of known difficult origin ZIP ${match.matched_zip}.`,
+          pricing_guidance: match.pricing_guidance
+        });
+      });
+
+      difficultLaneMatch.dropoff_matches.forEach((match) => {
+        pricingAlerts.push({
+          rule_name: "Difficult Dropoff Area",
+          severity: "medium",
+          alert_message: `Dropoff ZIP is within ${match.miles} miles of known difficult destination ZIP ${match.matched_zip}.`,
+          pricing_guidance: match.pricing_guidance
+        });
+      });
+
+      pricingAlerts = dedupeAlerts(pricingAlerts);
     } catch (err) {
       console.error("Failed to load pricing alerts / difficult lanes:", err.message);
     }
@@ -902,7 +1002,7 @@ app.post("/quote", requireAuth, async (req, res) => {
       superdispatch: sdJson,
       centraldispatch,
       pricing_alerts: pricingAlerts,
-      known_difficult_lane: difficultLaneMatch || { matched: false },
+      known_difficult_lane: difficultLaneMatch,
       pickup_access: {
         zip: pickupZip,
         ruca_code: pickupRuca ?? null,

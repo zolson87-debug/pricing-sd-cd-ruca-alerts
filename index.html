@@ -682,6 +682,34 @@
         return "Standard";
       }
 
+      function buildKnownDifficultLaneText(difficultLaneData) {
+        if (!difficultLaneData || typeof difficultLaneData !== "object") {
+          return "No";
+        }
+
+        const hasFull = Array.isArray(difficultLaneData.full_lane_matches) && difficultLaneData.full_lane_matches.length > 0;
+        const hasPickup = Array.isArray(difficultLaneData.pickup_matches) && difficultLaneData.pickup_matches.length > 0;
+        const hasDropoff = Array.isArray(difficultLaneData.dropoff_matches) && difficultLaneData.dropoff_matches.length > 0;
+
+        if (hasFull) {
+          return "Full Match";
+        }
+
+        if (hasPickup && hasDropoff) {
+          return "Pickup-Side Match + Dropoff-Side Match";
+        }
+
+        if (hasPickup) {
+          return "Pickup-Side Match";
+        }
+
+        if (hasDropoff) {
+          return "Dropoff-Side Match";
+        }
+
+        return "No";
+      }
+
       async function lookupZip(zip, prefix) {
         const cleanZip = String(zip || "").replace(/\D/g, "").slice(0, 5);
 
@@ -1067,10 +1095,7 @@
           $("dropoffCategory").value = dropoffCategory;
           $("laneDifficulty").value = calculateLaneDifficulty(pickupCategory, dropoffCategory);
 
-          $("knownDifficultLane").value =
-            data?.known_difficult_lane?.matched
-              ? `Yes — ${data.known_difficult_lane.rule_name || "Known Difficult Lane"}`
-              : "No";
+          $("knownDifficultLane").value = buildKnownDifficultLaneText(data?.known_difficult_lane);
 
           renderPricingAlerts(data?.pricing_alerts || []);
           persistFormState();

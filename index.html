@@ -299,6 +299,48 @@
       content: "▼";
     }
 
+    .alerts-card {
+      display: none;
+    }
+
+    .alerts-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .alert-box {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .alert-box.high {
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+
+    .alert-box.medium {
+      border-color: #fed7aa;
+      background: #fff7ed;
+    }
+
+    .alert-box.low,
+    .alert-box.info {
+      border-color: #bfdbfe;
+      background: #eff6ff;
+    }
+
+    .alert-title {
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    .alert-guidance {
+      margin-top: 8px;
+      color: #334155;
+    }
+
     @media (max-width: 980px) {
       .grid {
         grid-template-columns: 1fr;
@@ -438,6 +480,12 @@
       </div>
 
       <div class="stack">
+        <div class="card alerts-card" id="pricingAlertsCard">
+          <h2>Pricing Alerts</h2>
+          <div class="hint">Rules managed in Google Sheets will show here automatically when a quote matches.</div>
+          <div id="pricingAlertsContainer" class="alerts-list"></div>
+        </div>
+
         <div class="card">
           <h2>Super Dispatch</h2>
           <div class="result-grid">
@@ -585,16 +633,13 @@
         return `$${Math.round(Number(value))}`;
       }
 
-      function formatNumber(value) {
-        if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
-          return "—";
-        }
-        return String(value);
-      }
-
       async function loadSession() {
         try {
           const response = await fetch("/session");
+          if (response.status === 401) {
+            window.location.href = "/login";
+            return;
+          }
           if (!response.ok) return;
           const data = await response.json();
           if (data && data.username) {
@@ -726,7 +771,9 @@
           laneDifficulty: $("laneDifficulty").value,
           rawResponse: $("rawResponse").textContent,
           cdLinkOutput: $("cdLinkOutput").value,
-          generatedCDUrl
+          generatedCDUrl,
+          pricingAlertsHtml: $("pricingAlertsContainer").innerHTML,
+          pricingAlertsVisible: $("pricingAlertsCard").style.display
         };
       }
 
@@ -777,6 +824,9 @@
           $("rawResponse").textContent = data.rawResponse || "No quote yet.";
           $("cdLinkOutput").value = data.cdLinkOutput || "";
           generatedCDUrl = data.generatedCDUrl || "";
+
+          $("pricingAlertsContainer").innerHTML = data.pricingAlertsHtml || "";
+          $("pricingAlertsCard").style.display = data.pricingAlertsVisible || "none";
 
           if (generatedCDUrl) {
             $("openCDLink").disabled = false;
@@ -840,6 +890,41 @@
         } else {
           $("cdStatusText").value = "";
         }
+      }
+
+      function renderPricingAlerts(alerts) {
+        const card = $("pricingAlertsCard");
+        const container = $("pricingAlertsContainer");
+
+        container.innerHTML = "";
+
+        if (!Array.isArray(alerts) || !alerts.length) {
+          card.style.display = "none";
+          return;
+        }
+
+        card.style.display = "block";
+
+        alerts.forEach((alert) => {
+          const box = document.createElement("div");
+          box.className = `alert-box ${String(alert.severity || "info").toLowerCase()}`;
+
+          const title = document.createElement("div");
+          title.className = "alert-title";
+          title.textContent = alert.rule_name || "Pricing Alert";
+
+          const message = document.createElement("div");
+          message.textContent = alert.alert_message || "";
+
+          const guidance = document.createElement("div");
+          guidance.className = "alert-guidance";
+          guidance.innerHTML = `<b>Guidance:</b> ${alert.pricing_guidance || ""}`;
+
+          box.appendChild(title);
+          box.appendChild(message);
+          box.appendChild(guidance);
+          container.appendChild(box);
+        });
       }
 
       $("pickupZip").addEventListener("input", (e) => {
@@ -936,20 +1021,36 @@
           const response = await fetch("/quote", {
             method: "POST",
             headers: {
-              "Content-Type": "application/json"
+              "Content-Type": "application/json",
+              "Accept": "application/json"
             },
             body: JSON.stringify(payload)
           });
 
+          const contentType = response.headers.get("content-type") || "";
           const text = await response.text();
-          let data;
 
+          if (response.status === 401) {
+            setStatus("Your session expired. Redirecting to login...", "warn");
+            setTimeout(() => {
+              window.location.href = "/login";
+            }, 800);
+            return;
+          }
+
+          if (!contentType.includes("application/json")) {
+            $("rawResponse").textContent = text;
+            persistFormState();
+            throw new Error("Server returned HTML instead of JSON. You may need to log in again.");
+          }
+
+          let data;
           try {
             data = JSON.parse(text);
           } catch (_) {
             $("rawResponse").textContent = text;
             persistFormState();
-            throw new Error("Server returned HTML or other non-JSON response.");
+            throw new Error("Server returned invalid JSON.");
           }
 
           $("rawResponse").textContent = JSON.stringify(data, null, 2);
@@ -975,6 +1076,7 @@
               : "—";
 
           setCdFieldsFromResponse(data?.centraldispatch);
+          renderPricingAlerts(data?.pricing_alerts || []);
 
           $("pickupRuca").value = data?.pickup_access?.ruca_code ?? "Unknown";
           $("pickupCategory").value = pickupCategory;

@@ -105,11 +105,6 @@
       font-size: 18px;
     }
 
-    .card h3 {
-      margin: 0 0 12px;
-      font-size: 16px;
-    }
-
     .row {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -251,12 +246,6 @@
       max-height: 420px;
     }
 
-    .subcard {
-      margin-top: 20px;
-      border-top: 1px solid var(--line);
-      padding-top: 16px;
-    }
-
     .hint {
       font-size: 12px;
       color: var(--muted);
@@ -326,7 +315,8 @@
     }
 
     .alert-box.low,
-    .alert-box.info {
+    .alert-box.info,
+    .alert-box.warn {
       border-color: #bfdbfe;
       background: #eff6ff;
     }
@@ -575,6 +565,13 @@
               <input id="laneDifficulty" readonly />
             </div>
           </div>
+
+          <div class="row one">
+            <div>
+              <label for="knownDifficultLane">Known Difficult Lane</label>
+              <input id="knownDifficultLane" readonly />
+            </div>
+          </div>
         </div>
 
         <div class="card">
@@ -630,7 +627,7 @@
         if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
           return "—";
         }
-        return `$${Math.round(Number(value))}`;
+        return `$${Math.round(Number(value)).toLocaleString()}`;
       }
 
       async function loadSession() {
@@ -769,6 +766,7 @@
           dropoffRuca: $("dropoffRuca").value,
           dropoffCategory: $("dropoffCategory").value,
           laneDifficulty: $("laneDifficulty").value,
+          knownDifficultLane: $("knownDifficultLane").value,
           rawResponse: $("rawResponse").textContent,
           cdLinkOutput: $("cdLinkOutput").value,
           generatedCDUrl,
@@ -820,6 +818,7 @@
           $("dropoffRuca").value = data.dropoffRuca || "";
           $("dropoffCategory").value = data.dropoffCategory || "";
           $("laneDifficulty").value = data.laneDifficulty || "";
+          $("knownDifficultLane").value = data.knownDifficultLane || "";
 
           $("rawResponse").textContent = data.rawResponse || "No quote yet.";
           $("cdLinkOutput").value = data.cdLinkOutput || "";
@@ -905,9 +904,10 @@
 
         card.style.display = "block";
 
-        alerts.forEach((alert) => {
+        alerts.forEach((alert, index) => {
           const box = document.createElement("div");
           box.className = `alert-box ${String(alert.severity || "info").toLowerCase()}`;
+          box.dataset.alertIndex = String(index);
 
           const title = document.createElement("div");
           title.className = "alert-title";
@@ -918,7 +918,7 @@
 
           const guidance = document.createElement("div");
           guidance.className = "alert-guidance";
-          guidance.innerHTML = `<b>Guidance:</b> ${alert.pricing_guidance || ""}`;
+          guidance.textContent = `Guidance: ${alert.pricing_guidance || ""}`;
 
           box.appendChild(title);
           box.appendChild(message);
@@ -1016,41 +1016,25 @@
         };
 
         try {
-          setStatus("Requesting quote...", "ok");
+          setStatus("Requesting Super Dispatch and Central Dispatch pricing...", "ok");
 
           const response = await fetch("/quote", {
             method: "POST",
             headers: {
-              "Content-Type": "application/json",
-              "Accept": "application/json"
+              "Content-Type": "application/json"
             },
             body: JSON.stringify(payload)
           });
 
-          const contentType = response.headers.get("content-type") || "";
           const text = await response.text();
-
-          if (response.status === 401) {
-            setStatus("Your session expired. Redirecting to login...", "warn");
-            setTimeout(() => {
-              window.location.href = "/login";
-            }, 800);
-            return;
-          }
-
-          if (!contentType.includes("application/json")) {
-            $("rawResponse").textContent = text;
-            persistFormState();
-            throw new Error("Server returned HTML instead of JSON. You may need to log in again.");
-          }
-
           let data;
+
           try {
             data = JSON.parse(text);
           } catch (_) {
             $("rawResponse").textContent = text;
             persistFormState();
-            throw new Error("Server returned invalid JSON.");
+            throw new Error("Server returned HTML or other non-JSON response.");
           }
 
           $("rawResponse").textContent = JSON.stringify(data, null, 2);
@@ -1076,7 +1060,6 @@
               : "—";
 
           setCdFieldsFromResponse(data?.centraldispatch);
-          renderPricingAlerts(data?.pricing_alerts || []);
 
           $("pickupRuca").value = data?.pickup_access?.ruca_code ?? "Unknown";
           $("pickupCategory").value = pickupCategory;
@@ -1084,6 +1067,12 @@
           $("dropoffCategory").value = dropoffCategory;
           $("laneDifficulty").value = calculateLaneDifficulty(pickupCategory, dropoffCategory);
 
+          $("knownDifficultLane").value =
+            data?.known_difficult_lane?.matched
+              ? `Yes — ${data.known_difficult_lane.rule_name || "Known Difficult Lane"}`
+              : "No";
+
+          renderPricingAlerts(data?.pricing_alerts || []);
           persistFormState();
 
           if (data?.centraldispatch?.error) {

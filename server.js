@@ -82,6 +82,12 @@ try {
   console.error("Failed to load RUCA file:", err);
 }
 
+function normalizeZip(zip) {
+  const digits = String(zip || "").replace(/\D/g, "").trim();
+  if (!digits) return "";
+  return digits.padStart(5, "0").slice(0, 5);
+}
+
 function rucaCategory(code) {
   if (code === undefined || code === null || code === "") return "Unknown";
   const n = Number(code);
@@ -190,14 +196,14 @@ function buildCentralDispatchPayload({ pickup, delivery, vehicles, trailer_type 
       stopNumber: 1,
       city: toTrimmedString(pickup?.city),
       state: toTrimmedString(pickup?.state),
-      postalCode: toTrimmedString(pickup?.zip),
+      postalCode: normalizeZip(pickup?.zip),
       country: "US"
     },
     {
       stopNumber: 2,
       city: toTrimmedString(delivery?.city),
       state: toTrimmedString(delivery?.state),
-      postalCode: toTrimmedString(delivery?.zip),
+      postalCode: normalizeZip(delivery?.zip),
       country: "US"
     }
   ];
@@ -572,7 +578,7 @@ function haversineMiles(lat1, lon1, lat2, lon2) {
 }
 
 async function lookupZipLatLng(zip) {
-  const cleanZip = String(zip || "").trim();
+  const cleanZip = normalizeZip(zip);
 
   if (!/^\d{5}$/.test(cleanZip)) {
     return null;
@@ -627,8 +633,11 @@ async function findMatchingDifficultLane(difficultLanes, pickupZip, deliveryZip)
     return emptyResult;
   }
 
-  const pickupPoint = await lookupZipLatLng(pickupZip);
-  const deliveryPoint = await lookupZipLatLng(deliveryZip);
+  const normalizedPickupZip = normalizeZip(pickupZip);
+  const normalizedDeliveryZip = normalizeZip(deliveryZip);
+
+  const pickupPoint = await lookupZipLatLng(normalizedPickupZip);
+  const deliveryPoint = await lookupZipLatLng(normalizedDeliveryZip);
 
   if (!pickupPoint || !deliveryPoint) {
     return emptyResult;
@@ -640,8 +649,8 @@ async function findMatchingDifficultLane(difficultLanes, pickupZip, deliveryZip)
   const activeRows = difficultLanes.filter((row) => isActiveDifficultLaneRow(row));
 
   for (const row of activeRows) {
-    const originZip = String(row.origin_zip || "").trim();
-    const destinationZip = String(row.destination_zip || "").trim();
+    const originZip = normalizeZip(row.origin_zip);
+    const destinationZip = normalizeZip(row.destination_zip);
 
     if (!/^\d{5}$/.test(originZip) || !/^\d{5}$/.test(destinationZip)) {
       continue;
@@ -831,8 +840,8 @@ app.post("/quote", requireAuth, async (req, res) => {
       });
     }
 
-    const pickupZip = String(pickup.zip).trim();
-    const dropZip = String(delivery.zip).trim();
+    const pickupZip = normalizeZip(pickup.zip);
+    const dropZip = normalizeZip(delivery.zip);
 
     const pickupRuca = rucaData[pickupZip];
     const dropRuca = rucaData[dropZip];
@@ -853,8 +862,14 @@ app.post("/quote", requireAuth, async (req, res) => {
       pricingAlerts = findMatchingPricingAlerts({
         alerts: ruleData.alerts,
         regions: ruleData.regions,
-        pickup,
-        delivery,
+        pickup: {
+          ...pickup,
+          zip: pickupZip
+        },
+        delivery: {
+          ...delivery,
+          zip: dropZip
+        },
         vehicles,
         trailer_type
       });
@@ -904,8 +919,14 @@ app.post("/quote", requireAuth, async (req, res) => {
         "X-API-KEY": SUPERDISPATCH_API_KEY
       },
       body: JSON.stringify({
-        pickup,
-        delivery,
+        pickup: {
+          ...pickup,
+          zip: pickupZip
+        },
+        delivery: {
+          ...delivery,
+          zip: dropZip
+        },
         vehicles,
         trailer_type
       })
@@ -913,8 +934,14 @@ app.post("/quote", requireAuth, async (req, res) => {
 
     const canCallCentralDispatch = Boolean(CD_CLIENT_ID && CD_CLIENT_SECRET);
     const cdPayload = buildCentralDispatchPayload({
-      pickup,
-      delivery,
+      pickup: {
+        ...pickup,
+        zip: pickupZip
+      },
+      delivery: {
+        ...delivery,
+        zip: dropZip
+      },
       vehicles,
       trailer_type
     });

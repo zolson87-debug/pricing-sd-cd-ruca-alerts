@@ -20,6 +20,10 @@ const CD_TOKEN_URL =
 const CD_PRICING_URL =
   process.env.CD_PRICING_URL ||
   "https://api.centraldispatch.com/market-intelligence/list-prices";
+
+const PRICING_ALERTS_CSV_URL = process.env.PRICING_ALERTS_CSV_URL || "";
+const PRICING_REGIONS_CSV_URL = process.env.PRICING_REGIONS_CSV_URL || "";
+
 const APP_USERNAME = process.env.APP_USERNAME;
 const APP_PASSWORD = process.env.APP_PASSWORD;
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret";
@@ -35,12 +39,26 @@ if (!CD_CLIENT_ID || !CD_CLIENT_SECRET) {
 if (!APP_USERNAME || !APP_PASSWORD) {
   console.warn("WARNING: APP_USERNAME or APP_PASSWORD is not set.");
 }
+if (!PRICING_ALERTS_CSV_URL) {
+  console.warn("WARNING: PRICING_ALERTS_CSV_URL is not set. Pricing alerts will be unavailable.");
+}
+if (!PRICING_REGIONS_CSV_URL) {
+  console.warn("WARNING: PRICING_REGIONS_CSV_URL is not set. Region-based pricing alerts may be unavailable.");
+}
 
 let rucaData = {};
 let cdTokenCache = {
   accessToken: null,
   expiresAt: 0
 };
+
+let pricingAlertsCache = {
+  alerts: [],
+  regions: {},
+  fetchedAt: 0
+};
+
+const PRICING_ALERTS_CACHE_MS = 5 * 60 * 1000;
 
 try {
   const rucaPath = path.join(__dirname, "ruca_by_zip.json");
@@ -120,6 +138,18 @@ function requireAuth(req, res, next) {
   const session = verifySession(cookies.auth_session);
 
   if (!session) {
+    const wantsJson =
+      req.path === "/quote" ||
+      req.path === "/session" ||
+      (req.headers.accept && req.headers.accept.includes("application/json")) ||
+      (req.headers["content-type"] && req.headers["content-type"].includes("application/json"));
+
+    if (wantsJson) {
+      return res.status(401).json({
+        error: "Unauthorized. Please log in again."
+      });
+    }
+
     return res.redirect("/login");
   }
 
@@ -331,6 +361,171 @@ function summarizeCentralDispatchResponse(cdJson) {
   };
 }
 
+function splitCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current);
+  return result;
+}
+
+function parseSimpleCsv(text) {
+  const lines = String(text || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((line) => line.trim() !== "");
+
+  if (!lines.length) return [];
+
+  const headers = splitCsvLine(lines[0]).map((h) => h.trim());
+
+  return lines.slice(1).map((line) => {
+    const values = splitCsvLine(line);
+    const row = {};
+
+    headers.forEach((header, index) => {
+      row[header] = (values[index] || "").trim();
+    });
+
+    return row;
+  });
+}
+
+async function loadSheetRows(csvUrl) {
+  if (!csvUrl) return [];
+
+  const response = await fetch(csvUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to load sheet CSV: ${response.status}`);
+  }
+
+  const text = await response.text();
+  return parseSimpleCsv(text);
+}
+
+async function loadPricingRulesAndRegions() {
+  const now = Date.now();
+
+  if (now - pricingAlertsCache.fetchedAt < PRICING_ALERTS_CACHE_MS) {
+    return pricingAlertsCache;
+  }
+
+  const [alertRows, regionRows] = await Promise.all([
+    loadSheetRows(PRICING_ALERTS_CSV_URL),
+    loadSheetRows(PRICING_REGIONS_CSV_URL)
+  ]);
+
+  const regions = {};
+  regionRows.forEach((row) => {
+    const name = String(row.region_name || "").trim();
+    const states = String(row.states_csv || "")
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+
+    if (name) {
+      regions[name] = states;
+    }
+  });
+
+  pricingAlertsCache = {
+    alerts: alertRows,
+    regions,
+    fetchedAt: now
+  };
+
+  return pricingAlertsCache;
+}
+
+function isActiveRule(row) {
+  return ["yes", "true", "1", "active"].includes(
+    String(row.active || "").trim().toLowerCase()
+  );
+}
+
+function normalizeDateOnly(value) {
+  const v = String(value || "").trim();
+  return v || null;
+}
+
+function dateInRange(today, startDate, endDate) {
+  const start = normalizeDateOnly(startDate);
+  const end = normalizeDateOnly(endDate);
+
+  if (start && today < start) return false;
+  if (end && today > end) return false;
+  return true;
+}
+
+function matchesState(ruleValue, actualState) {
+  const rule = String(ruleValue || "").trim().toUpperCase();
+  if (!rule) return true;
+  return rule === String(actualState || "").trim().toUpperCase();
+}
+
+function matchesRegion(ruleValue, actualState, regions) {
+  const rule = String(ruleValue || "").trim();
+  if (!rule) return true;
+
+  const regionStates = regions[rule] || [];
+  return regionStates.includes(String(actualState || "").trim().toUpperCase());
+}
+
+function matchesVehicleType(ruleValue, actualVehicleType) {
+  const rule = String(ruleValue || "").trim().toLowerCase();
+  if (!rule) return true;
+  return rule === String(actualVehicleType || "").trim().toLowerCase();
+}
+
+function matchesTrailerType(ruleValue, actualTrailerType) {
+  const rule = String(ruleValue || "").trim().toLowerCase();
+  if (!rule) return true;
+  return rule === String(actualTrailerType || "").trim().toLowerCase();
+}
+
+function findMatchingPricingAlerts({ alerts, regions, pickup, delivery, vehicles, trailer_type }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const firstVehicle = Array.isArray(vehicles) && vehicles.length ? vehicles[0] : {};
+  const vehicleType = firstVehicle?.type || "";
+
+  return alerts
+    .filter((row) => isActiveRule(row))
+    .filter((row) => dateInRange(today, row.start_date, row.end_date))
+    .filter((row) => matchesState(row.origin_state, pickup?.state))
+    .filter((row) => matchesRegion(row.origin_region, pickup?.state, regions))
+    .filter((row) => matchesState(row.destination_state, delivery?.state))
+    .filter((row) => matchesRegion(row.destination_region, delivery?.state, regions))
+    .filter((row) => matchesVehicleType(row.vehicle_type, vehicleType))
+    .filter((row) => matchesTrailerType(row.trailer_type, trailer_type))
+    .sort((a, b) => Number(a.sort_order || 9999) - Number(b.sort_order || 9999))
+    .map((row) => ({
+      rule_name: row.rule_name || "Pricing Alert",
+      severity: String(row.severity || "info").trim().toLowerCase(),
+      alert_message: row.alert_message || "",
+      pricing_guidance: row.pricing_guidance || ""
+    }));
+}
+
 app.get("/login", (req, res) => {
   const cookies = parseCookies(req);
   const session = verifySession(cookies.auth_session);
@@ -421,6 +616,21 @@ app.post("/quote", requireAuth, async (req, res) => {
 
     const pickupRuca = rucaData[pickupZip];
     const dropRuca = rucaData[dropZip];
+
+    let pricingAlerts = [];
+    try {
+      const ruleData = await loadPricingRulesAndRegions();
+      pricingAlerts = findMatchingPricingAlerts({
+        alerts: ruleData.alerts,
+        regions: ruleData.regions,
+        pickup,
+        delivery,
+        vehicles,
+        trailer_type
+      });
+    } catch (err) {
+      console.error("Failed to load pricing alerts:", err.message);
+    }
 
     const sdPromise = fetch(SUPERDISPATCH_URL, {
       method: "POST",
@@ -526,6 +736,7 @@ app.post("/quote", requireAuth, async (req, res) => {
     return res.status(sdResponse.status).json({
       superdispatch: sdJson,
       centraldispatch,
+      pricing_alerts: pricingAlerts,
       pickup_access: {
         zip: pickupZip,
         ruca_code: pickupRuca ?? null,

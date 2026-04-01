@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autosled Pricing Login</title>
+  <style>
+    :root {
+      --bg1: #0f172a;
+      --bg2: #1e293b;
+      --card: rgba(255,255,255,0.96);
+      --text: #0f172a;
+      --muted: #64748b;
+      --line: #dbe3ee;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --danger-bg: #fef2f2;
+      --danger-text: #b91c1c;
+      --danger-line: #fecaca;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(37,99,235,0.30), transparent 35%),
+        radial-gradient(circle at bottom right, rgba(15,118,110,0.22), transparent 30%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: 980px;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .hero {
+      color: white;
+      padding: 24px 8px 24px 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 16px;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      opacity: 0.8;
+    }
+
+    .hero h1 {
+      margin: 0 0 14px;
+      font-size: 42px;
+      line-height: 1.05;
+    }
+
+    .hero p {
+      margin: 0 0 18px;
+      color: rgba(255,255,255,0.82);
+      font-size: 17px;
+      line-height: 1.55;
+      max-width: 560px;
+    }
+
+    .bullets {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .bullet {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 14px;
+      padding: 14px 16px;
+      backdrop-filter: blur(6px);
+      color: rgba(255,255,255,0.9);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 22px;
+      padding: 28px;
+      box-shadow: 0 24px 60px rgba(15,23,42,0.28);
+      align-self: center;
+    }
+
+    .brand {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: bold;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    .sub {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 15px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(37,99,235,0.12);
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .error {
+      display: none;
+      margin-bottom: 16px;
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      border: 1px solid var(--danger-line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 14px;
+    }
+
+    .error.show {
+      display: block;
+    }
+
+    button {
+      width: 100%;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 15px;
+      font-weight: bold;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+      transition: background .15s ease, transform .04s ease;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .foot {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .shell {
+        grid-template-columns: 1fr;
+        max-width: 520px;
+      }
+
+      .hero {
+        padding: 0;
+      }
+
+      .hero h1 {
+        font-size: 34px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div class="eyebrow">Autosled Internal Tool</div>
+      <h1>Super Dispatch Pricing + RUCA</h1>
+      <p>
+        Secure access for your team to quote lanes, view RUCA category, and estimate lane difficulty from one simple screen.
+      </p>
+
+      <div class="bullets">
+        <div class="bullet">Fast quote lookup through your Super Dispatch proxy</div>
+        <div class="bullet">Pickup and dropoff RUCA category visibility</div>
+        <div class="bullet">Internal-only access protected by login</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="brand">Sign In</div>
+      <h2>Welcome back</h2>
+      <p class="sub">Enter the team username and password to open the pricing tool.</p>
+
+      <div id="errorBox" class="error">Invalid username or password.</div>
+
+      <form method="POST" action="/login">
+        <div class="field">
+          <label for="username">Username</label>
+          <input id="username" name="username" autocomplete="username" required />
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+
+        <button type="submit">Sign In</button>
+      </form>
+
+      <div class="foot">Protected internal application</div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "1") {
+      document.getElementById("errorBox").classList.add("show");
+    }
+  </script>
+</body>
+</html>

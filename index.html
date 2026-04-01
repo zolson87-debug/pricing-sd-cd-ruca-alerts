@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autosled Pricing Tool</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #17202a;
+      --muted: #637282;
+      --line: #d8e0e8;
+      --accent: #1d4ed8;
+      --accent2: #0f766e;
+      --danger: #b91c1c;
+      --warning: #b45309;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .topbar {
+      background: #0f172a;
+      color: white;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .topbar-inner {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .topbar-title {
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255,255,255,0.82);
+      font-size: 14px;
+    }
+
+    .logout-btn {
+      border: 1px solid rgba(255,255,255,0.20);
+      background: transparent;
+      color: white;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .logout-btn:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+
+    p.lead {
+      margin: 0 0 24px;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 420px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 18px;
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 16px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .row.one {
+      grid-template-columns: 1fr;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-weight: bold;
+    }
+
+    input, select, button, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 14px;
+      background: white;
+      font-family: inherit;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 110px;
+    }
+
+    input[readonly], textarea[readonly] {
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button.primary:hover {
+      opacity: 0.95;
+    }
+
+    button.secondary {
+      background: #eef4ff;
+      color: var(--accent);
+      border: 1px solid #c7d7fe;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button.secondary:hover {
+      background: #e3edff;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .result-grid.four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      background: #fbfdff;
+    }
+
+    .metric .label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .metric .value {
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .status {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      display: none;
+      white-space: pre-wrap;
+    }
+
+    .status.error {
+      display: block;
+      background: #fef2f2;
+      color: var(--danger);
+      border: 1px solid #fecaca;
+    }
+
+    .status.ok {
+      display: block;
+      background: #ecfeff;
+      color: var(--accent2);
+      border: 1px solid #a5f3fc;
+    }
+
+    .status.warn {
+      display: block;
+      background: #fff7ed;
+      color: var(--warning);
+      border: 1px solid #fed7aa;
+    }
+
+    .mono {
+      font-family: Consolas, Monaco, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 14px;
+      border-radius: 12px;
+      overflow: auto;
+      max-height: 420px;
+    }
+
+    .subcard {
+      margin-top: 20px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: -2px;
+      margin-bottom: 12px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 20px;
+    }
+
+    details.raw-panel {
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+      margin-top: 20px;
+    }
+
+    details.raw-panel summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: #0f172a;
+      margin-bottom: 12px;
+      list-style: none;
+    }
+
+    details.raw-panel summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.raw-panel summary::before {
+      content: "▶";
+      display: inline-block;
+      margin-right: 8px;
+      font-size: 12px;
+      transform: translateY(-1px);
+    }
+
+    details.raw-panel[open] summary::before {
+      content: "▼";
+    }
+
+    @media (max-width: 980px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .result-grid,
+      .result-grid.four,
+      .row {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar-inner,
+      .wrap {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-title">Autosled Pricing Tool</div>
+      <div class="topbar-right">
+        <span id="userDisplay">Signed in</span>
+        <form method="POST" action="/logout" style="margin:0;">
+          <button type="submit" class="logout-btn">Log Out</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <h1>Super Dispatch + Central Dispatch + RUCA</h1>
+    <p class="lead"><b>THIS IS FOR REFERENCE ONLY. DO NOT RELY ON THIS SOLELY FOR GENERATING QUOTES EVEN IF CONFIDENCE % IS HIGH.</b></p>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Quote Request</h2>
+
+        <form id="quoteForm">
+          <div class="row">
+            <div>
+              <label for="pickupZip">Pickup ZIP</label>
+              <input id="pickupZip" maxlength="5" inputmode="numeric" required />
+            </div>
+            <div>
+              <label for="deliveryZip">Dropoff ZIP</label>
+              <input id="deliveryZip" maxlength="5" inputmode="numeric" required />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="pickupCity">Pickup City</label>
+              <input id="pickupCity" readonly />
+            </div>
+            <div>
+              <label for="pickupState">Pickup State</label>
+              <input id="pickupState" readonly />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="deliveryCity">Dropoff City</label>
+              <input id="deliveryCity" readonly />
+            </div>
+            <div>
+              <label for="deliveryState">Dropoff State</label>
+              <input id="deliveryState" readonly />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="trailerType">Trailer Type</label>
+              <select id="trailerType">
+                <option value="open">Open</option>
+                <option value="enclosed">Enclosed</option>
+              </select>
+            </div>
+            <div>
+              <label for="vehicleType">Vehicle Type</label>
+              <select id="vehicleType">
+                <option value="sedan">Sedan</option>
+                <option value="suv">SUV</option>
+                <option value="pickup">Pickup</option>
+                <option value="van">Van</option>
+                <option value="coupe">Coupe</option>
+                <option value="wagon">Wagon</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="vin">VIN (optional)</label>
+              <input id="vin" placeholder="1HGCM82633A123456" />
+            </div>
+            <div>
+              <label for="inop">Inoperable</label>
+              <select id="inop">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="year">Year</label>
+              <input id="year" type="number" inputmode="numeric" placeholder="2023" />
+            </div>
+            <div>
+              <label for="make">Make</label>
+              <input id="make" placeholder="Toyota" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="model">Model</label>
+              <input id="model" placeholder="Camry" />
+            </div>
+            <div></div>
+          </div>
+
+          <div class="row one">
+            <div>
+              <button type="submit" class="primary">Get Quote</button>
+            </div>
+          </div>
+        </form>
+
+        <div id="status" class="status"></div>
+      </div>
+
+      <div class="stack">
+        <div class="card">
+          <h2>Super Dispatch</h2>
+          <div class="result-grid">
+            <div class="metric">
+              <div class="label">Price</div>
+              <div id="price" class="value">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">Price / Mile</div>
+              <div id="pricePerMile" class="value">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">Confidence</div>
+              <div id="confidence" class="value">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Central Dispatch Market Intelligence</h2>
+          <div class="result-grid four">
+            <div class="metric">
+              <div class="label">Low</div>
+              <div id="cdLow" class="value">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">Predicted</div>
+              <div id="cdPredicted" class="value">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">High</div>
+              <div id="cdHigh" class="value">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">Predicted $ / Mile</div>
+              <div id="cdPredictedPerMile" class="value">—</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="cdDistanceMiles">Distance Miles</label>
+              <input id="cdDistanceMiles" readonly />
+            </div>
+            <div>
+              <label for="cdSampleSize">Sample Size</label>
+              <input id="cdSampleSize" readonly />
+            </div>
+          </div>
+
+          <div class="row one">
+            <div>
+              <label for="cdStatusText">CD Status</label>
+              <input id="cdStatusText" readonly />
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>RUCA / Lane Info</h2>
+
+          <div class="row">
+            <div>
+              <label for="pickupRuca">Pickup RUCA</label>
+              <input id="pickupRuca" readonly />
+            </div>
+            <div>
+              <label for="pickupCategory">Pickup Category</label>
+              <input id="pickupCategory" readonly />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="dropoffRuca">Dropoff RUCA</label>
+              <input id="dropoffRuca" readonly />
+            </div>
+            <div>
+              <label for="dropoffCategory">Dropoff Category</label>
+              <input id="dropoffCategory" readonly />
+            </div>
+          </div>
+
+          <div class="row one">
+            <div>
+              <label for="laneDifficulty">Lane Difficulty Estimate</label>
+              <input id="laneDifficulty" readonly />
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Central Dispatch Search</h2>
+          <div class="hint">Generate a Central Dispatch search link from the current pickup and dropoff ZIP, city, and state values.</div>
+
+          <div class="row one">
+            <div>
+              <button type="button" id="generateCDLink" class="primary">Generate Central Dispatch Link</button>
+            </div>
+          </div>
+
+          <div class="row one">
+            <div>
+              <label for="cdLinkOutput">Generated Link</label>
+              <textarea id="cdLinkOutput" readonly placeholder="Generated link will appear here..."></textarea>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <button type="button" id="openCDLink" class="secondary" disabled>Open Central Dispatch</button>
+            </div>
+            <div>
+              <button type="button" id="openSideBySide" class="secondary" disabled>Open CD + SD Side-by-Side</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Raw Response</h2>
+          <details class="raw-panel">
+            <summary>Show / Hide Raw API Response</summary>
+            <div id="rawResponse" class="mono">No quote yet.</div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      let generatedCDUrl = "";
+
+      function formatMoney(value) {
+        if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
+          return "—";
+        }
+        return `$${Number(value).toFixed(2)}`;
+      }
+
+      function formatWholeMoney(value) {
+        if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
+          return "—";
+        }
+        return `$${Math.round(Number(value))}`;
+      }
+
+      function formatNumber(value) {
+        if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
+          return "—";
+        }
+        return String(value);
+      }
+
+      async function loadSession() {
+        try {
+          const response = await fetch("/session");
+          if (!response.ok) return;
+          const data = await response.json();
+          if (data && data.username) {
+            $("userDisplay").textContent = `Signed in as ${data.username}`;
+          }
+        } catch (_) {}
+      }
+
+      function setStatus(message, type = "ok") {
+        const el = $("status");
+        el.className = `status ${type}`;
+        el.textContent = message;
+      }
+
+      function clearStatus() {
+        const el = $("status");
+        el.className = "status";
+        el.textContent = "";
+      }
+
+      function clearZipFields(prefix) {
+        $(prefix + "City").value = "";
+        $(prefix + "State").value = "";
+      }
+
+      function calculateLaneDifficulty(pickupCategory, dropoffCategory) {
+        const p = (pickupCategory || "").trim();
+        const d = (dropoffCategory || "").trim();
+
+        if (!p || !d || p === "Unknown" || d === "Unknown") return "Unknown";
+        if (p === "Very Remote" || d === "Very Remote") return "Very Hard";
+        if (p === "Rural" || d === "Rural") return "Hard";
+
+        if (
+          (p === "Metro" && d === "Suburban / Small City") ||
+          (p === "Suburban / Small City" && d === "Metro")
+        ) {
+          return "Standard";
+        }
+
+        if (p === "Metro" && d === "Metro") return "Easy";
+
+        return "Standard";
+      }
+
+      async function lookupZip(zip, prefix) {
+        const cleanZip = String(zip || "").replace(/\D/g, "").slice(0, 5);
+
+        if (cleanZip.length !== 5) {
+          clearZipFields(prefix);
+          return;
+        }
+
+        try {
+          const response = await fetch(`https://api.zippopotam.us/us/${cleanZip}`);
+          if (!response.ok) throw new Error("ZIP lookup failed");
+
+          const data = await response.json();
+          const place = data.places && data.places[0] ? data.places[0] : null;
+
+          $(prefix + "City").value = place ? (place["place name"] || "") : "";
+          $(prefix + "State").value = place ? (place["state abbreviation"] || "") : "";
+
+          persistFormState();
+        } catch (_) {
+          clearZipFields(prefix);
+          persistFormState();
+        }
+      }
+
+      function encodeCity(city) {
+        return (city || "").trim().replace(/\s+/g, "%20");
+      }
+
+      function buildCentralDispatchUrl() {
+        const pickupCity = $("pickupCity").value.trim();
+        const pickupState = $("pickupState").value.trim();
+        const pickupZip = $("pickupZip").value.trim();
+
+        const deliveryCity = $("deliveryCity").value.trim();
+        const deliveryState = $("deliveryState").value.trim();
+        const deliveryZip = $("deliveryZip").value.trim();
+
+        if (!pickupCity || !pickupState || !pickupZip || !deliveryCity || !deliveryState || !deliveryZip) {
+          setStatus("Missing city/state data. Enter valid ZIP codes first.", "error");
+          return "";
+        }
+
+        const template = "https://app.centraldispatch.com/search?search=~(vC~(mn~1)~tLPW~2~opt~%27all~ofst~0~lmt~50~sF~(~(n~%27pup~d~%27ASC)~(n~%27dMA~d~%27ASC))~dBS~false~sPSO~false~sTOT~false~aR~%27All~rT~%27Open~l~(~(c~%27|**ORIGIN CITY**|~st~%27|**ORIGIN STATE**|~zC~%27|**ORIGIN ZIP**|~r~50~s~%27Pickup)~(c~%27|**DEST CITY**|~st~%27|**DEST STATE**|~zC~%27|**DEST ZIP**|~r~50~s~%27Dropoff)))";
+
+        return template
+          .replace("|**ORIGIN CITY**|", encodeCity(pickupCity))
+          .replace("|**ORIGIN STATE**|", pickupState)
+          .replace("|**ORIGIN ZIP**|", pickupZip)
+          .replace("|**DEST CITY**|", encodeCity(deliveryCity))
+          .replace("|**DEST STATE**|", deliveryState)
+          .replace("|**DEST ZIP**|", deliveryZip);
+      }
+
+      function getFormState() {
+        return {
+          pickupZip: $("pickupZip").value,
+          deliveryZip: $("deliveryZip").value,
+          pickupCity: $("pickupCity").value,
+          pickupState: $("pickupState").value,
+          deliveryCity: $("deliveryCity").value,
+          deliveryState: $("deliveryState").value,
+          trailerType: $("trailerType").value,
+          vehicleType: $("vehicleType").value,
+          vin: $("vin").value,
+          year: $("year").value,
+          inop: $("inop").value,
+          make: $("make").value,
+          model: $("model").value,
+          price: $("price").textContent,
+          pricePerMile: $("pricePerMile").textContent,
+          confidence: $("confidence").textContent,
+          cdLow: $("cdLow").textContent,
+          cdPredicted: $("cdPredicted").textContent,
+          cdHigh: $("cdHigh").textContent,
+          cdPredictedPerMile: $("cdPredictedPerMile").textContent,
+          cdDistanceMiles: $("cdDistanceMiles").value,
+          cdSampleSize: $("cdSampleSize").value,
+          cdStatusText: $("cdStatusText").value,
+          pickupRuca: $("pickupRuca").value,
+          pickupCategory: $("pickupCategory").value,
+          dropoffRuca: $("dropoffRuca").value,
+          dropoffCategory: $("dropoffCategory").value,
+          laneDifficulty: $("laneDifficulty").value,
+          rawResponse: $("rawResponse").textContent,
+          cdLinkOutput: $("cdLinkOutput").value,
+          generatedCDUrl
+        };
+      }
+
+      function persistFormState() {
+        try {
+          sessionStorage.setItem("autosledPricingState", JSON.stringify(getFormState()));
+        } catch (_) {}
+      }
+
+      function restoreFormState() {
+        try {
+          const raw = sessionStorage.getItem("autosledPricingState");
+          if (!raw) return;
+          const data = JSON.parse(raw);
+
+          $("pickupZip").value = data.pickupZip || "";
+          $("deliveryZip").value = data.deliveryZip || "";
+          $("pickupCity").value = data.pickupCity || "";
+          $("pickupState").value = data.pickupState || "";
+          $("deliveryCity").value = data.deliveryCity || "";
+          $("deliveryState").value = data.deliveryState || "";
+          $("trailerType").value = data.trailerType || "open";
+          $("vehicleType").value = data.vehicleType || "sedan";
+          $("vin").value = data.vin || "";
+          $("year").value = data.year || "";
+          $("inop").value = data.inop || "false";
+          $("make").value = data.make || "";
+          $("model").value = data.model || "";
+
+          $("price").textContent = data.price || "—";
+          $("pricePerMile").textContent = data.pricePerMile || "—";
+          $("confidence").textContent = data.confidence || "—";
+
+          $("cdLow").textContent = data.cdLow || "—";
+          $("cdPredicted").textContent = data.cdPredicted || "—";
+          $("cdHigh").textContent = data.cdHigh || "—";
+          $("cdPredictedPerMile").textContent = data.cdPredictedPerMile || "—";
+          $("cdDistanceMiles").value = data.cdDistanceMiles || "";
+          $("cdSampleSize").value = data.cdSampleSize || "";
+          $("cdStatusText").value = data.cdStatusText || "";
+
+          $("pickupRuca").value = data.pickupRuca || "";
+          $("pickupCategory").value = data.pickupCategory || "";
+          $("dropoffRuca").value = data.dropoffRuca || "";
+          $("dropoffCategory").value = data.dropoffCategory || "";
+          $("laneDifficulty").value = data.laneDifficulty || "";
+
+          $("rawResponse").textContent = data.rawResponse || "No quote yet.";
+          $("cdLinkOutput").value = data.cdLinkOutput || "";
+          generatedCDUrl = data.generatedCDUrl || "";
+
+          if (generatedCDUrl) {
+            $("openCDLink").disabled = false;
+            $("openSideBySide").disabled = false;
+          }
+        } catch (_) {}
+      }
+
+      function openSideBySideWindows(cdUrl) {
+        const width = window.screen && window.screen.availWidth ? window.screen.availWidth : 1600;
+        const height = window.screen && window.screen.availHeight ? window.screen.availHeight : 900;
+        const halfWidth = Math.floor(width / 2);
+
+        const sdWindow = window.open(
+          "about:blank",
+          "sdSideBySideWindow",
+          `width=${halfWidth},height=${height},left=0,top=0,resizable=yes,scrollbars=yes`
+        );
+
+        const cdWindow = window.open(
+          "about:blank",
+          "cdSideBySideWindow",
+          `width=${width - halfWidth},height=${height},left=${halfWidth},top=0,resizable=yes,scrollbars=yes`
+        );
+
+        if (!sdWindow || !cdWindow) {
+          setStatus("Popup blocker may have prevented opening the side-by-side view.", "error");
+          return;
+        }
+
+        sdWindow.location.href = window.location.href;
+        cdWindow.location.href = cdUrl;
+
+        try {
+          sdWindow.focus();
+        } catch (_) {}
+      }
+
+      function setCdFieldsFromResponse(centraldispatch) {
+        const summary = centraldispatch?.summary || null;
+        const error = centraldispatch?.error || null;
+        const status = centraldispatch?.status;
+
+        $("cdLow").textContent = summary ? formatWholeMoney(summary.low) : "—";
+        $("cdPredicted").textContent = summary ? formatWholeMoney(summary.predicted) : "—";
+        $("cdHigh").textContent = summary ? formatWholeMoney(summary.high) : "—";
+        $("cdPredictedPerMile").textContent = summary ? formatMoney(summary.predicted_price_per_mile) : "—";
+        $("cdDistanceMiles").value = summary && summary.distance_miles != null ? String(summary.distance_miles) : "";
+        $("cdSampleSize").value = summary && summary.sample_size != null ? String(summary.sample_size) : "";
+
+        if (error) {
+          const errorText =
+            error.message ||
+            (Array.isArray(error.errors) && error.errors.length
+              ? error.errors.map((e) => e.message).join(" | ")
+              : `CD request failed (status ${status ?? "unknown"})`);
+
+          $("cdStatusText").value = errorText;
+        } else if (summary) {
+          $("cdStatusText").value = `CD loaded successfully (status ${status ?? 200})`;
+        } else {
+          $("cdStatusText").value = "";
+        }
+      }
+
+      $("pickupZip").addEventListener("input", (e) => {
+        e.target.value = e.target.value.replace(/\D/g, "").slice(0, 5);
+        lookupZip(e.target.value, "pickup");
+        persistFormState();
+      });
+
+      $("deliveryZip").addEventListener("input", (e) => {
+        e.target.value = e.target.value.replace(/\D/g, "").slice(0, 5);
+        lookupZip(e.target.value, "delivery");
+        persistFormState();
+      });
+
+      ["trailerType", "vehicleType", "vin", "year", "inop", "make", "model"].forEach((id) => {
+        $(id).addEventListener("input", persistFormState);
+        $(id).addEventListener("change", persistFormState);
+      });
+
+      $("generateCDLink").addEventListener("click", () => {
+        const url = buildCentralDispatchUrl();
+        if (!url) return;
+
+        generatedCDUrl = url;
+        $("cdLinkOutput").value = url;
+        $("openCDLink").disabled = false;
+        $("openSideBySide").disabled = false;
+        persistFormState();
+        setStatus("Central Dispatch link generated.", "ok");
+      });
+
+      $("openCDLink").addEventListener("click", () => {
+        if (!generatedCDUrl) return;
+        window.open(generatedCDUrl, "_blank");
+      });
+
+      $("openSideBySide").addEventListener("click", () => {
+        if (!generatedCDUrl) return;
+        persistFormState();
+        openSideBySideWindows(generatedCDUrl);
+      });
+
+      $("quoteForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        clearStatus();
+
+        const pickupZip = $("pickupZip").value.trim();
+        const deliveryZip = $("deliveryZip").value.trim();
+
+        if (pickupZip.length !== 5 || deliveryZip.length !== 5) {
+          setStatus("Please enter both 5-digit ZIP codes.", "error");
+          return;
+        }
+
+        const vinValue = $("vin").value.trim();
+        const yearValue = $("year").value.trim();
+        const makeValue = $("make").value.trim();
+        const modelValue = $("model").value.trim();
+
+        if (!vinValue && !(yearValue && makeValue && modelValue)) {
+          setStatus("For Central Dispatch, enter either a VIN or Year + Make + Model.", "warn");
+        }
+
+        const vehicle = {
+          type: $("vehicleType").value,
+          is_inoperable: $("inop").value === "true",
+          vin: vinValue,
+          make: makeValue,
+          model: modelValue
+        };
+
+        if (yearValue !== "") {
+          vehicle.year = parseInt(yearValue, 10);
+        }
+
+        const payload = {
+          pickup: {
+            city: $("pickupCity").value.trim(),
+            state: $("pickupState").value.trim(),
+            zip: pickupZip
+          },
+          delivery: {
+            city: $("deliveryCity").value.trim(),
+            state: $("deliveryState").value.trim(),
+            zip: deliveryZip
+          },
+          trailer_type: $("trailerType").value,
+          vehicles: [vehicle]
+        };
+
+        try {
+          setStatus("Requesting quote...", "ok");
+
+          const response = await fetch("/quote", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          const text = await response.text();
+          let data;
+
+          try {
+            data = JSON.parse(text);
+          } catch (_) {
+            $("rawResponse").textContent = text;
+            persistFormState();
+            throw new Error("Server returned HTML or other non-JSON response.");
+          }
+
+          $("rawResponse").textContent = JSON.stringify(data, null, 2);
+
+          if (!response.ok) {
+            persistFormState();
+            throw new Error(data.error || "Quote request failed.");
+          }
+
+          const pricing = data?.superdispatch?.data || {};
+          const pickupCategory = data?.pickup_access?.ruca_category ?? "Unknown";
+          const dropoffCategory = data?.dropoff_access?.ruca_category ?? "Unknown";
+
+          $("price").textContent =
+            pricing.price !== undefined && pricing.price !== null ? formatMoney(pricing.price) : "—";
+          $("pricePerMile").textContent =
+            pricing.price_per_mile !== undefined && pricing.price_per_mile !== null
+              ? formatMoney(pricing.price_per_mile)
+              : "—";
+          $("confidence").textContent =
+            pricing.confidence !== undefined && pricing.confidence !== null
+              ? `${pricing.confidence}%`
+              : "—";
+
+          setCdFieldsFromResponse(data?.centraldispatch);
+
+          $("pickupRuca").value = data?.pickup_access?.ruca_code ?? "Unknown";
+          $("pickupCategory").value = pickupCategory;
+          $("dropoffRuca").value = data?.dropoff_access?.ruca_code ?? "Unknown";
+          $("dropoffCategory").value = dropoffCategory;
+          $("laneDifficulty").value = calculateLaneDifficulty(pickupCategory, dropoffCategory);
+
+          persistFormState();
+
+          if (data?.centraldispatch?.error) {
+            setStatus("Super Dispatch loaded. Central Dispatch returned an error. See CD Status and Raw Response.", "warn");
+          } else {
+            setStatus("Quote loaded successfully.", "ok");
+          }
+        } catch (error) {
+          persistFormState();
+          setStatus(error.message || "Quote request failed.", "error");
+        }
+      });
+
+      loadSession();
+      restoreFormState();
+    </script>
+  </div>
+</body>
+</html>

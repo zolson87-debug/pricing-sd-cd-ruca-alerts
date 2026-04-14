@@ -25,6 +25,8 @@ const CD_PRICING_URL =
 const PRICING_ALERTS_CSV_URL = process.env.PRICING_ALERTS_CSV_URL || "";
 const PRICING_REGIONS_CSV_URL = process.env.PRICING_REGIONS_CSV_URL || "";
 const DIFFICULT_LANES_CSV_URL = process.env.DIFFICULT_LANES_CSV_URL || "";
+const METRO_MAP_CSV_URL = process.env.METRO_MAP_CSV_URL || "";
+const KNOWN_ROUTES_CSV_URL = process.env.KNOWN_ROUTES_CSV_URL || "";
 
 const APP_USERNAME = process.env.APP_USERNAME;
 const APP_PASSWORD = process.env.APP_PASSWORD;
@@ -56,6 +58,16 @@ if (!DIFFICULT_LANES_CSV_URL) {
     "WARNING: DIFFICULT_LANES_CSV_URL is not set. Difficult lane matching will be unavailable."
   );
 }
+if (!METRO_MAP_CSV_URL) {
+  console.warn(
+    "WARNING: METRO_MAP_CSV_URL is not set. Metro mapping will be unavailable."
+  );
+}
+if (!KNOWN_ROUTES_CSV_URL) {
+  console.warn(
+    "WARNING: KNOWN_ROUTES_CSV_URL is not set. Known route matching will be unavailable."
+  );
+}
 
 let rucaData = {};
 let cdTokenCache = {
@@ -67,6 +79,8 @@ let pricingAlertsCache = {
   alerts: [],
   regions: {},
   difficultLanes: [],
+  metroMap: {},
+  knownRoutes: [],
   fetchedAt: 0
 };
 
@@ -178,6 +192,10 @@ function requireAuth(req, res, next) {
 
 function toTrimmedString(value) {
   return String(value || "").trim();
+}
+
+function normalizeName(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function mapVehicleTypeForCD(vehicleType) {
@@ -447,10 +465,18 @@ async function loadPricingRulesAndRegions() {
     return pricingAlertsCache;
   }
 
-  const [alertRows, regionRows, difficultLaneRows] = await Promise.all([
+  const [
+    alertRows,
+    regionRows,
+    difficultLaneRows,
+    metroMapRows,
+    knownRouteRows
+  ] = await Promise.all([
     loadSheetRows(PRICING_ALERTS_CSV_URL),
     loadSheetRows(PRICING_REGIONS_CSV_URL),
-    loadSheetRows(DIFFICULT_LANES_CSV_URL)
+    loadSheetRows(DIFFICULT_LANES_CSV_URL),
+    loadSheetRows(METRO_MAP_CSV_URL),
+    loadSheetRows(KNOWN_ROUTES_CSV_URL)
   ]);
 
   const regions = {};
@@ -466,10 +492,27 @@ async function loadPricingRulesAndRegions() {
     }
   });
 
+  const metroMap = {};
+  metroMapRows.forEach((row) => {
+    const active = ["yes", "true", "1", "active", ""].includes(
+      String(row.active || "").trim().toLowerCase()
+    );
+    if (!active) return;
+
+    const zip = normalizeZip(row.zip);
+    const metroArea = String(row.metro_area || "").trim();
+
+    if (zip && metroArea) {
+      metroMap[zip] = metroArea;
+    }
+  });
+
   pricingAlertsCache = {
     alerts: alertRows,
     regions,
     difficultLanes: difficultLaneRows,
+    metroMap,
+    knownRoutes: knownRouteRows,
     fetchedAt: now
   };
 
@@ -735,6 +778,47 @@ async function findMatchingDifficultLane(difficultLanes, pickupZip, deliveryZip)
   };
 }
 
+function findMatchingKnownRoute({ metroMap, knownRoutes, pickupZip, deliveryZip }) {
+  const pickupMetro = metroMap[normalizeZip(pickupZip)] || "";
+  const deliveryMetro = metroMap[normalizeZip(deliveryZip)] || "";
+
+  const emptyResult = {
+    matched: false,
+    pickup_metro: pickupMetro || null,
+    delivery_metro: deliveryMetro || null,
+    matches: []
+  };
+
+  if (!pickupMetro || !deliveryMetro) {
+    return emptyResult;
+  }
+
+  const matches = (Array.isArray(knownRoutes) ? knownRoutes : [])
+    .filter((row) => isActiveRule(row))
+    .filter(
+      (row) =>
+        normalizeName(row.origin_metro) === normalizeName(pickupMetro) &&
+        normalizeName(row.destination_metro) === normalizeName(deliveryMetro)
+    )
+    .map((row) => ({
+      rule_name: row.rule_name || "Known Route",
+      alert_message:
+        row.alert_message || `Known route detected: ${pickupMetro} → ${deliveryMetro}.`,
+      pricing_guidance:
+        row.pricing_guidance ||
+        "Review prior performance and route pricing history.",
+      pickup_metro: pickupMetro,
+      delivery_metro: deliveryMetro
+    }));
+
+  return {
+    matched: matches.length > 0,
+    pickup_metro: pickupMetro,
+    delivery_metro: deliveryMetro,
+    matches
+  };
+}
+
 function dedupeAlerts(alerts) {
   const seen = new Set();
 
@@ -856,6 +940,13 @@ app.post("/quote", requireAuth, async (req, res) => {
       full_lane_matches: []
     };
 
+    let knownRouteMatch = {
+      matched: false,
+      pickup_metro: null,
+      delivery_metro: null,
+      matches: []
+    };
+
     try {
       const ruleData = await loadPricingRulesAndRegions();
 
@@ -907,10 +998,39 @@ app.post("/quote", requireAuth, async (req, res) => {
         });
       });
 
+      knownRouteMatch = findMatchingKnownRoute({
+        metroMap: ruleData.metroMap,
+        knownRoutes: ruleData.knownRoutes,
+        pickupZip,
+        deliveryZip: dropZip
+      });
+
+      knownRouteMatch.matches.forEach((match) => {
+        pricingAlerts.push({
+          rule_name: match.rule_name,
+          severity: "low",
+          alert_message: match.alert_message,
+          pricing_guidance: `${match.pricing_guidance} Route detected: ${match.pickup_metro} → ${match.delivery_metro}.`
+        });
+      });
+
       pricingAlerts = dedupeAlerts(pricingAlerts);
     } catch (err) {
-      console.error("Failed to load pricing alerts / difficult lanes:", err.message);
+      console.error(
+        "Failed to load pricing alerts / difficult lanes / known routes:",
+        err.message
+      );
     }
+
+    const normalizedPickup = {
+      ...pickup,
+      zip: pickupZip
+    };
+
+    const normalizedDelivery = {
+      ...delivery,
+      zip: dropZip
+    };
 
     const sdPromise = fetch(SUPERDISPATCH_URL, {
       method: "POST",
@@ -919,14 +1039,8 @@ app.post("/quote", requireAuth, async (req, res) => {
         "X-API-KEY": SUPERDISPATCH_API_KEY
       },
       body: JSON.stringify({
-        pickup: {
-          ...pickup,
-          zip: pickupZip
-        },
-        delivery: {
-          ...delivery,
-          zip: dropZip
-        },
+        pickup: normalizedPickup,
+        delivery: normalizedDelivery,
         vehicles,
         trailer_type
       })
@@ -934,14 +1048,8 @@ app.post("/quote", requireAuth, async (req, res) => {
 
     const canCallCentralDispatch = Boolean(CD_CLIENT_ID && CD_CLIENT_SECRET);
     const cdPayload = buildCentralDispatchPayload({
-      pickup: {
-        ...pickup,
-        zip: pickupZip
-      },
-      delivery: {
-        ...delivery,
-        zip: dropZip
-      },
+      pickup: normalizedPickup,
+      delivery: normalizedDelivery,
       vehicles,
       trailer_type
     });
@@ -1030,6 +1138,11 @@ app.post("/quote", requireAuth, async (req, res) => {
       centraldispatch,
       pricing_alerts: pricingAlerts,
       known_difficult_lane: difficultLaneMatch,
+      known_route: knownRouteMatch,
+      metro_areas: {
+        pickup_metro: knownRouteMatch.pickup_metro,
+        delivery_metro: knownRouteMatch.delivery_metro
+      },
       pickup_access: {
         zip: pickupZip,
         ruca_code: pickupRuca ?? null,
